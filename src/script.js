@@ -2,7 +2,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js"; 
+import { DecalGeometry } from "three/examples/jsm/geometries/DecalGeometry.js";
 import GUI from "lil-gui";
+
+// ...existing code...
 
 // init default
 const gui = new GUI();
@@ -32,20 +35,22 @@ rgbeLoader.load('./environment/studi_1k.hdr', (texture) => {
 
 
 // Cube
-const geometry = new THREE.BoxGeometry(1, 1, 1);
+const geometry = new THREE.TorusKnotGeometry( 10, 3, 100, 16 ); 
 const material = new THREE.MeshStandardMaterial({ color: 'white' });
-const cube = new THREE.Mesh(geometry, material);
-scene.add(cube);
+const torusknot = new THREE.Mesh(geometry, material);
+scene.add(torusknot);
+
+torusknot.scale.setScalar(0.05)
 
 // Debug GUI for cube material
-const cubeFolder = gui.addFolder('Cube Material');
-cubeFolder.addColor({ color: material.color.getHex() }, 'color').onChange((value) => {
+const torusFolder = gui.addFolder('Object Material');
+torusFolder.addColor({ color: material.color.getHex() }, 'color').onChange((value) => {
     material.color.set(value);
 });
-cubeFolder.add(material, 'wireframe');
-cubeFolder.add(material, 'roughness', 0, 1, 0.01);
-cubeFolder.add(material, 'metalness', 0, 1, 0.01);
-cubeFolder.open();
+torusFolder.add(material, 'roughness', 0, 1, 0.01);
+torusFolder.add(material, 'metalness', 0, 1, 0.01);
+torusFolder.open();
+
 
 
 // button
@@ -57,42 +62,104 @@ const addLogoButton = {
         canvasElement.height = 256;
         const context = canvasElement.getContext('2d');
 
+        // Clear the canvas with transparent background
+        context.clearRect(0, 0, 256, 256);
+
         // Draw text "Logo Here"
         context.fillStyle = 'black';
         context.font = '30px Arial';
         context.fillText('Logo Here', 50, 50);
 
-        // Draw a red dot beneath the text with alpha around it
-        context.fillStyle = 'rgba(255, 0, 0, 1)';
+        // Draw a red dot beneath the text
+        context.fillStyle = 'red';
         context.beginPath();
-        context.arc(128, 150, 10, 0, Math.PI * 2);
+        context.arc(128, 150, 30, 0, Math.PI * 2);
         context.fill();
 
         // Create a texture from the canvas
         const logoTexture = new THREE.CanvasTexture(canvasElement);
-
-        // Apply the texture to the cube material
-        cube.material.map = logoTexture;
-        cube.material.transparent = true;
-        cube.material.needsUpdate = true;
-
-        // Set the texture to repeat and scale it down
-        logoTexture.wrapS = THREE.RepeatWrapping;
-        logoTexture.wrapT = THREE.RepeatWrapping;
-        logoTexture.repeat.set(0.25, 0.25); // Adjust the repeat value to scale the logo
-
-        // Add GUI controls for the logo size
-        const logoFolder = gui.addFolder('Logo');
-        logoFolder.add({ size: 0.25 }, 'size', 0.01, 1, 0.01).name('size').onChange((value) => {
-            logoTexture.repeat.set(value, value);
-            logoTexture.offset.set((1 - value) / 2, (1 - value) / 2);
-            logoTexture.needsUpdate = true;
+        
+        // Create a decal material
+        const decalMaterial = new THREE.MeshPhysicalMaterial({
+            map: logoTexture,
+            transparent: true,
+            depthTest: true,
+            depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -4,
+            wireframe: false,
+            roughness: 0.5,
+            metalness: 0.2
         });
+
+        // Position for the decal (initially on front of torus)
+        const position = new THREE.Vector3(0, 0.27, 0.23);
+        
+        // Create a decal
+        const decalSize = new THREE.Vector3(0.2, 0.2, 0.2);
+        const decalGeometry = new DecalGeometry(
+            torusknot, 
+            position, 
+            new THREE.Euler(0, 0, 0), 
+            decalSize
+        );
+        
+        const decalMesh = new THREE.Mesh(decalGeometry, decalMaterial);
+        scene.add(decalMesh);
+
+        // Add GUI controls for the decal
+        const logoFolder = gui.addFolder('Logo Decal');
+        
+
+        // Size control
+        const sizeControl = { size: 0.2 };
+        logoFolder.add(sizeControl, 'size', 0.3, 1.0, 0.01).onChange(() => {
+            decalSize.set(sizeControl.size, sizeControl.size, sizeControl.size);
+            updateDecal();
+        });
+        
         logoFolder.open();
+        
+        function updateDecal() {
+            // Remove old decal
+            scene.remove(decalMesh);
+        
+            
+            // Create new decal geometry with updated parameters
+            const newDecalGeometry = new DecalGeometry(
+                torusknot, 
+                position, 
+                new THREE.Euler(0, 0, 0), 
+                decalSize
+            );
+            
+            // Update the mesh
+            decalMesh.geometry.dispose();
+            decalMesh.geometry = newDecalGeometry;
+            scene.add(decalMesh);
+        }
     }
 };
 
-gui.add(addLogoButton, 'addLogo').name('Add Logo');
+let isLogoAdded = false;
+
+
+// Create a proper function property for your button
+const debugObject = {
+    addLogo: function() {
+        if (!isLogoAdded) {
+            addLogoButton.addLogo();
+            isLogoAdded = true;
+        } else {
+            console.log('Logo already added.');
+        }
+    }
+};
+
+// Add the button using the function property
+gui.add(debugObject, 'addLogo').name('Add Logo');
+
+
 
 // Animation
 const animate = () => {
